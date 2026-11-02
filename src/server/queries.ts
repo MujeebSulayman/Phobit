@@ -4,15 +4,11 @@ import { PublicKey } from "@solana/web3.js";
 import type { AnalyticsResponse, Coin, Payout, RecipientDashboard, RecipientWallet } from "@/lib/types";
 import type { Me } from "./auth";
 import { decrypt } from "./crypto";
-import { db, must, type CardRow, type CoinRow, type PayoutRow, type RecipientRow } from "./db";
+import { one, sql, type CardRow, type CoinRow, type PayoutRow, type RecipientRow } from "./db";
 import { SOL_MINT, USDC_MINT } from "./env";
 import { usdPrices } from "./prices";
 import { feeVault, liveState, quoteMint, vaultBalance } from "./pump";
 import { connection } from "./solana";
-
-const COIN_SELECT = "*, recipient:recipients(kind, masked, status, claimed_at)";
-const PAYOUT_SELECT =
-  "id, mint, lamports, usdc_amount, usd_cents, status, sweep_signature, created_at, coin:coins(name, symbol, image_url), recipient:recipients(masked)";
 
 type CoinJoined = CoinRow & { recipient: Pick<RecipientRow, "kind" | "masked" | "status" | "claimed_at"> | null };
 type PayoutJoined = Pick<
@@ -56,10 +52,22 @@ function toPayout(row: PayoutJoined): Payout {
   };
 }
 
+/** Coins joined with their recipient's public fields; never selects the raw contact. */
+function coins(where: { mint?: string; wallet?: string | null }) {
+  const mint = where.mint ?? null;
+  const wallet = where.wallet ?? null;
+  return sql<CoinJoined>`
+    select c.*, json_build_object('kind', r.kind, 'masked', r.masked, 'status', r.status, 'claimed_at', r.claimed_at) as recipient
+    from coins c
+    join recipients r on r.key = c.recipient_key
+    where (${mint}::text is null or c.mint = ${mint})
+      and (${wallet}::text is null or c.creator_wallet = ${wallet})
+    order by c.created_at desc
+    limit 500`;
+}
+
 export async function listCoins(wallet?: string | null): Promise<Coin[]> {
-  let q = db().from("coins").select(COIN_SELECT).order("created_at", { ascending: false }).limit(500);
-  if (wallet) q = q.eq("creator_wallet", wallet);
-  return must(await q).map((r) => toCoin(r as CoinJoined));
+  return (await coins({ wallet })).map(toCoin);
 }
 
 /** Raw quote units → indicative USD, or null without a price. */
@@ -74,7 +82,7 @@ async function quoteToUsd(raw: bigint): Promise<number | null> {
  * named on several coins, "unswept" covers all of them. Chain failures degrade to nulls.
  */
 export async function getCoin(mint: string): Promise<Coin | null> {
-  const row = must(await db().from("coins").select(COIN_SELECT).eq("mint", mint).maybeSingle()) as CoinJoined | null;
+  const row = await one(coins({ mint }));
   if (!row) return null;
   const coin = toCoin(row);
   const creator = new PublicKey(row.creator_key);
@@ -98,24 +106,28 @@ export async function getCoin(mint: string): Promise<Coin | null> {
 }
 
 export async function listPayouts({ limit = 100, recipientKey }: { limit?: number; recipientKey?: string } = {}) {
-  let q = db()
-    .from("payouts")
-    .select(PAYOUT_SELECT)
-    .neq("status", "sweeping")
-    .order("created_at", { ascending: false })
-    .limit(Math.min(Math.max(limit, 1), 500));
-  if (recipientKey) q = q.eq("recipient_key", recipientKey);
-  return must(await q).map((r) => toPayout(r as unknown as PayoutJoined));
+  const key = recipientKey ?? null;
+  const rows = await sql<PayoutJoined>`
+    select p.id, p.mint, p.lamports, p.usdc_amount, p.usd_cents, p.status, p.sweep_signature, p.created_at,
+           case when c.mint is null then null
+                else json_build_object('name', c.name, 'symbol', c.symbol, 'image_url', c.image_url) end as coin,
+           json_build_object('masked', r.masked) as recipient
+    from payouts p
+    left join coins c on c.mint = p.mint
+    join recipients r on r.key = p.recipient_key
+    where p.status <> 'sweeping' and (${key}::text is null or p.recipient_key = ${key})
+    order by p.created_at desc
+    limit ${Math.min(Math.max(limit, 1), 500)}`;
+  return rows.map(toPayout);
 }
 
 export async function analytics(days = 30): Promise<Omit<AnalyticsResponse, "solUsd">> {
   const since = new Date(Date.now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
-  const [totals, daily] = await Promise.all([
-    db().from("platform_totals").select("*").single(),
-    db().from("daily_fees").select("day, usd_cents").gte("day", since),
+  const [[t], daily] = await Promise.all([
+    sql<Record<string, number>>`select * from platform_totals`,
+    sql<{ day: string; usd_cents: number }>`select day, usd_cents from daily_fees where day >= ${since}::date`,
   ]);
-  const t = must(totals) as Record<string, number>;
-  const byDay = new Map(must(daily).map((d: { day: string; usd_cents: number }) => [d.day, Number(d.usd_cents)]));
+  const byDay = new Map(daily.map((d) => [d.day, Number(d.usd_cents)]));
   const series = Array.from({ length: days }, (_, i) => {
     const date = new Date(Date.now() - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10);
     return { date, usdCents: byDay.get(date) ?? 0 };
@@ -134,9 +146,7 @@ export async function analytics(days = 30): Promise<Omit<AnalyticsResponse, "sol
 }
 
 export async function activeCard(recipientKey: string): Promise<CardRow | null> {
-  return must(
-    await db().from("cards").select("*").eq("recipient_key", recipientKey).eq("status", "active").maybeSingle(),
-  ) as CardRow | null;
+  return one(sql<CardRow>`select * from cards where recipient_key = ${recipientKey} and status = 'active'`);
 }
 
 /** USDC held by `owner`, in raw units (6 decimals). */
@@ -169,17 +179,14 @@ async function walletSummary(r: RecipientRow): Promise<RecipientWallet | null> {
 const IN_FLIGHT = new Set(["swept", "swapped", "submitted"]);
 
 export async function dashboard(me: Me): Promise<RecipientDashboard> {
-  const [recipient, card, coins, payouts] = await Promise.all([
-    db().from("recipients").select("*").eq("key", me.key).maybeSingle(),
+  const [r, card, myCoins, payouts] = await Promise.all([
+    one(sql<RecipientRow>`select * from recipients where key = ${me.key}`),
     activeCard(me.key),
-    db()
-      .from("coins")
-      .select("mint, name, symbol, image_url, fees_swept_lamports")
-      .eq("recipient_key", me.key)
-      .order("created_at", { ascending: false }),
+    sql<RecipientDashboard["coins"][number]>`
+      select mint, name, symbol, image_url, fees_swept_lamports from coins
+      where recipient_key = ${me.key} order by created_at desc`,
     listPayouts({ limit: 200, recipientKey: me.key }),
   ]);
-  const r = must(recipient) as RecipientRow | null;
 
   const totals = { settledCents: 0, inFlightCents: 0, waitingCents: 0, count: payouts.length };
   for (const p of payouts) {
@@ -201,10 +208,7 @@ export async function dashboard(me: Me): Promise<RecipientDashboard> {
         wallet_added_at: card.wallet_added_at,
       },
     },
-    coins: must(coins).map((c: Record<string, unknown>) => ({
-      ...c,
-      fees_swept_lamports: Number(c.fees_swept_lamports),
-    })) as RecipientDashboard["coins"],
+    coins: myCoins,
     wallet: r ? await walletSummary(r) : null,
     payouts,
     totals,

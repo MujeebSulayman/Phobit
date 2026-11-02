@@ -1,27 +1,45 @@
 import "server-only";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { neon, types, type NeonQueryFunction } from "@neondatabase/serverless";
 import { env } from "./env";
 import { HttpError } from "./http";
 
-let client: SupabaseClient | null = null;
+/** Postgres timestamp text ("2026-10-31 07:18:34.0075+00") → ISO 8601, which every browser parses. */
+const toIso = (v: string) => new Date(v.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")).toISOString();
 
-/** Service-role client, used only on the server (the browser never reads tables). */
-export function db(): SupabaseClient {
-  client ??= createClient(env.supabaseUrl(), env.supabaseServiceKey(), {
-    auth: { persistSession: false, autoRefreshToken: false },
+// Rows come back in the shapes the API uses: numbers instead of int8/numeric strings,
+// ISO strings instead of Date objects.
+const PARSERS: Record<number, (v: string) => unknown> = {
+  20: Number, // int8 (bigint, count(*))
+  1700: Number, // numeric
+  1184: toIso, // timestamptz
+  1082: (v) => v, // date stays "YYYY-MM-DD"
+};
+
+let client: NeonQueryFunction<false, false> | null = null;
+
+function neonClient() {
+  client ??= neon(env.databaseUrl(), {
+    types: { getTypeParser: (id: number, format?: string) => PARSERS[id] ?? types.getTypeParser(id, format as "text") },
   });
   return client;
 }
 
-/** Unwraps a Supabase result, turning errors into 500s. */
-export function must<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
-  if (error) throw new Error(`Database error: ${error.message}`);
-  return data as T;
+/**
+ * Parameterised query against Neon over HTTP: interpolated values are sent as bind parameters,
+ * never spliced into the SQL text.
+ */
+export function sql<T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]> {
+  return neonClient()(strings, ...values) as unknown as Promise<T[]>;
+}
+
+/** First row or null. */
+export async function one<T>(rows: Promise<T[]>): Promise<T | null> {
+  return (await rows)[0] ?? null;
 }
 
 /** Postgres unique-violation, e.g. a second active card for the same recipient. */
-export function isUniqueViolation(error: { code?: string } | null): boolean {
-  return error?.code === "23505";
+export function isUniqueViolation(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: string }).code === "23505";
 }
 
 export type RecipientRow = {
@@ -94,6 +112,5 @@ export type PayoutRow = {
 };
 
 export function assertConfigured() {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
-    throw new HttpError(503, "Backend not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
+  if (!process.env.DATABASE_URL) throw new HttpError(503, "Backend not configured: set DATABASE_URL");
 }

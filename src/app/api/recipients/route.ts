@@ -1,6 +1,6 @@
 import { requireRecipient } from "@/server/auth";
 import { cardProvider } from "@/server/cards";
-import { db, must } from "@/server/db";
+import { sql } from "@/server/db";
 import { json, route } from "@/server/http";
 import { activeCard, dashboard } from "@/server/queries";
 import { syncRecipient } from "@/server/wallet";
@@ -20,8 +20,8 @@ export const DELETE = route(async (req) => {
   const card = await activeCard(me.key);
   if (card) {
     await cardProvider().closeCard(card.provider_card_id);
-    must(await db().from("cards").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", card.id));
+    await sql`update cards set status = 'closed', closed_at = now() where id = ${card.id}`;
   }
-  must(await db().from("recipients").update({ status: "pending" }).eq("key", me.key));
+  await sql`update recipients set status = 'pending' where key = ${me.key}`;
   return json({ ok: true }, { private: true });
 });

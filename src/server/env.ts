@@ -13,9 +13,8 @@ function optional(name: string, fallback: string): string {
 
 /** Read lazily so a missing variable only breaks the endpoints that need it. */
 export const env = {
-  /** Supabase is the database. The service-role key never leaves the server. */
-  supabaseUrl: () => required("SUPABASE_URL"),
-  supabaseServiceKey: () => required("SUPABASE_SERVICE_ROLE_KEY"),
+  /** Neon pooled connection string. Only the server connects; never expose it to the browser. */
+  databaseUrl: () => required("DATABASE_URL"),
   /** Privy: phone sign-in and the recipients' wallets. */
   privyAppId: () => required("NEXT_PUBLIC_PRIVY_APP_ID"),
   privyAppSecret: () => required("PRIVY_APP_SECRET"),

@@ -1,7 +1,6 @@
--- Schema for the backend in src/server and src/app/api (Supabase Postgres).
--- Like usedebit.app, the browser never queries tables: only the server, with the service-role key.
--- RLS is on with no policies, and anon/authenticated lose every grant, including on the functions.
--- Apply with `supabase db push`, or paste into the Supabase SQL editor.
+-- Schema for the backend in src/server and src/app/api (Neon / Postgres 15+).
+-- Only the server connects, with DATABASE_URL; the browser never talks to the database.
+-- Apply with: psql "$DATABASE_URL" -f db/migrations/0001_init.sql  (or paste into the Neon SQL editor)
 
 -- A recipient is a phone number. Its Privy wallet exists before the person ever signs in.
 create table recipients (
@@ -178,14 +177,3 @@ create function release_keeper_lock() returns void
 language sql set search_path = public as $$
   update keeper_lock set locked_until = 'epoch' where id = 1;
 $$;
-
-alter table recipients       enable row level security;
-alter table coins            enable row level security;
-alter table pending_launches enable row level security;
-alter table cards            enable row level security;
-alter table payouts          enable row level security;
-alter table withdrawals      enable row level security;
-alter table keeper_lock      enable row level security;
-revoke all on all tables in schema public from anon, authenticated;
-revoke execute on all functions in schema public from public, anon, authenticated;
-grant execute on all functions in schema public to service_role;

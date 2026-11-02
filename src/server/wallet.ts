@@ -8,7 +8,7 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import type { Me } from "./auth";
 import { treasuryKeypair } from "./crypto";
-import { db, must, type RecipientRow } from "./db";
+import { one, sql, type RecipientRow } from "./db";
 import { USDC_MINT } from "./env";
 import { HttpError } from "./http";
 import { hasServerSigner } from "./privy";
@@ -23,7 +23,7 @@ const MAX_WITHDRAWALS_PER_HOUR = 5;
  * on it, and when they first claimed. Works for people no coin names yet, too.
  */
 export async function syncRecipient(me: Me): Promise<RecipientRow> {
-  const existing = must(await db().from("recipients").select("*").eq("key", me.key).maybeSingle()) as RecipientRow | null;
+  const existing = await one(sql<RecipientRow>`select * from recipients where key = ${me.key}`);
   const autoPayouts = me.wallet ? await hasServerSigner(me.wallet.id).catch(() => existing?.auto_payouts ?? false) : false;
   const fields = {
     privy_user_id: existing?.privy_user_id ?? me.privyUserId,
@@ -32,14 +32,15 @@ export async function syncRecipient(me: Me): Promise<RecipientRow> {
     auto_payouts: autoPayouts,
     claimed_at: existing?.claimed_at ?? new Date().toISOString(),
   };
-  if (existing) return must(await db().from("recipients").update(fields).eq("key", me.key).select("*").single()) as RecipientRow;
-  return must(
-    await db()
-      .from("recipients")
-      .upsert({ key: me.key, kind: me.kind, contact: me.contact, masked: me.masked, ...fields }, { onConflict: "key" })
-      .select("*")
-      .single(),
-  ) as RecipientRow;
+  const [row] = await sql<RecipientRow>`
+    insert into recipients (key, kind, contact, masked, privy_user_id, wallet_id, wallet_address, auto_payouts, claimed_at)
+    values (${me.key}, ${me.kind}, ${me.contact}, ${me.masked}, ${fields.privy_user_id}, ${fields.wallet_id},
+            ${fields.wallet_address}, ${fields.auto_payouts}, ${fields.claimed_at})
+    on conflict (key) do update set
+      privy_user_id = excluded.privy_user_id, wallet_id = excluded.wallet_id, wallet_address = excluded.wallet_address,
+      auto_payouts = excluded.auto_payouts, claimed_at = excluded.claimed_at
+    returning *`;
+  return row;
 }
 
 function requireWallet(me: Me) {
@@ -67,8 +68,9 @@ export async function buildWithdraw(me: Me, body: { to?: unknown; amount?: unkno
   if (raw > (await usdcBalance(wallet.address))) throw new HttpError(400, "Amount is more than your USDC balance");
 
   const since = new Date(Date.now() - 3_600_000).toISOString();
-  const { count } = await db().from("withdrawals").select("*", { count: "exact", head: true }).eq("recipient_key", me.key).gte("created_at", since);
-  if ((count ?? 0) >= MAX_WITHDRAWALS_PER_HOUR) throw new HttpError(429, "Too many withdrawals, try again later");
+  const [{ count }] = await sql<{ count: number }>`
+    select count(*) from withdrawals where recipient_key = ${me.key} and created_at >= ${since}::timestamptz`;
+  if (count >= MAX_WITHDRAWALS_PER_HOUR) throw new HttpError(429, "Too many withdrawals, try again later");
 
   const usdc = new PublicKey(USDC_MINT);
   const treasury = treasuryKeypair();
@@ -84,9 +86,9 @@ export async function buildWithdraw(me: Me, body: { to?: unknown; amount?: unkno
     [treasury],
   );
   const signature = bs58.encode(tx.signatures[0]);
-  must(
-    await db().from("withdrawals").insert({ signature, recipient_key: me.key, to_address: to.toBase58(), usdc_amount: Number(raw) / 1e6 }),
-  );
+  await sql`
+    insert into withdrawals (signature, recipient_key, to_address, usdc_amount)
+    values (${signature}, ${me.key}, ${to.toBase58()}, ${Number(raw) / 1e6})`;
   return { transaction: Buffer.from(tx.serialize()).toString("base64"), signature };
 }
 
@@ -99,19 +101,19 @@ export async function submitWithdraw(me: Me, body: { signedTransaction?: unknown
     throw new HttpError(400, "Invalid transaction");
   }
   const signature = bs58.encode(tx.signatures[0]);
-  const row = must(
-    await db().from("withdrawals").select("status").eq("signature", signature).eq("recipient_key", me.key).maybeSingle(),
-  ) as { status: string } | null;
+  const row = await one(
+    sql<{ status: string }>`select status from withdrawals where signature = ${signature} and recipient_key = ${me.key}`,
+  );
   if (!row) throw new HttpError(404, "Unknown withdrawal, start again");
   try {
     await sendAndConfirm(tx.serialize());
   } catch (e) {
     if (e instanceof TxFailedError) {
-      must(await db().from("withdrawals").update({ status: "failed" }).eq("signature", signature));
+      await sql`update withdrawals set status = 'failed' where signature = ${signature}`;
       throw new HttpError(400, e.message);
     }
     throw new HttpError(400, `Could not send: ${e instanceof Error ? e.message : e}`);
   }
-  must(await db().from("withdrawals").update({ status: "confirmed" }).eq("signature", signature));
+  await sql`update withdrawals set status = 'confirmed' where signature = ${signature}`;
   return { signature };
 }

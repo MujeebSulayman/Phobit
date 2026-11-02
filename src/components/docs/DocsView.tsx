@@ -406,22 +406,23 @@ export function DocsView() {
             payout.
           </p>
         </Section>
-        <Section id="attribution" title="Per-coin attribution">
+        <Section id="attribution" title="Whose wallet the fees go to">
           <p>
             {"pump.fun pays creator fees into a vault keyed by the coin's "}
             <code>creator</code>
             {
-              " public key. If every coin on Debit shared one creator key, their fees would blend in a single vault and we would need to index every trade to split them. Instead, every coin gets its own creator key, derived deterministically:"
+              " public key. On Debit, that creator is the recipient's own Solana wallet, created for their phone number at launch time — before they've ever signed up:"
             }
           </p>
-          <pre>{`seed    = HMAC-SHA256(master_seed, mint)
-creator = ed25519_keypair(seed).publicKey
-vault   = creator_vault_pda(creator)`}</pre>
+          <pre>{`wallet  = privy_wallet_for(phone)   // created once per number
+creator = wallet
+vault   = creator_vault_pda(wallet)`}</pre>
           <ul>
-            <li>Nothing per coin is stored. The keeper re-derives the key from the mint whenever it needs to sweep.</li>
-            <li>The vault's balance is, by construction, exactly that coin's unswept fees.</li>
+            <li>When the recipient signs in with that number and the texted code, the wallet is theirs.</li>
+            <li>The fees are never held by Debit: they sit in the recipient&apos;s vault until collected into their wallet.</li>
             <li>
-              Only a signature from the derived key can move the vault, and only the keeper holds the master seed.
+              Several coins naming the same number share one vault, so a payout can cover more than one coin. It&apos;s
+              shown as &ldquo;Several coins&rdquo; in that case.
             </li>
           </ul>
           <p>
@@ -430,9 +431,9 @@ vault   = creator_vault_pda(creator)`}</pre>
           </p>
         </Section>
         <Section id="sweeping" title="Sweeping, swapping & bridging">
-          <p>The keeper runs every 10 minutes. For each live coin it:</p>
+          <p>The keeper runs every 10 minutes. For each recipient who has turned on automatic payouts it:</p>
           <ol>
-            <li>Re-derives the creator key and reads the vault balance across both pump programs.</li>
+            <li>Reads their wallet&apos;s fee vaults across both pump programs.</li>
             <li>
               {"Skips vaults under "}
               <strong>0.005 SOL</strong>
@@ -441,10 +442,10 @@ vault   = creator_vault_pda(creator)`}</pre>
             <li>
               {"Submits one transaction: "}
               <code>collect_creator_fee</code>
-              {" followed by a transfer of the collected SOL to Debit's treasury."}
+              {" into the recipient's own wallet. Debit pays the network fee; their wallet needs no SOL."}
             </li>
             <li>
-              {"Swaps the collected AAPLx (and any SOL) to "}
+              {"Swaps the collected AAPLx, inside their wallet, to "}
               <strong>USDC</strong>
               {
                 " through Jupiter, so the payout is stablecoin-denominated from this point on. The USDC received is the payout's dollar value."
@@ -479,7 +480,7 @@ vault   = creator_vault_pda(creator)`}</pre>
           <Table
             head={["State", "Meaning", "What happens next"]}
             rows={[
-              ["Swept", "Fees collected on-chain to the treasury.", "Swapped to USDC in the same run."],
+              ["Swept", "Fees collected on-chain into the recipient's wallet.", "Swapped to USDC in the same run."],
               [
                 "Converted to USDC",
                 "SOL swapped to USDC on Jupiter; dollar value fixed.",
@@ -611,7 +612,7 @@ vault   = creator_vault_pda(creator)`}</pre>
             <dt>Recipient</dt>
             <dd>The phone number a coin's fees are held for.</dd>
             <dt>Sweep</dt>
-            <dd>One collection of a vault's balance to the treasury, recorded as one payout.</dd>
+            <dd>One collection of a vault's balance into the recipient's wallet, recorded as one payout.</dd>
           </dl>
         </Section>
         <Section id="faq" title="FAQ">
