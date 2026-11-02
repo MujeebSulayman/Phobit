@@ -1,0 +1,37 @@
+{
+  "name": "usedebit-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
+    "@pump-fun/pump-sdk": "^4.3.1",
+    "@pump-fun/pump-swap-sdk": "^2.2.0",
+    "@reown/appkit": "^1.8.24",
+    "@reown/appkit-adapter-solana": "^1.8.24",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.98.4",
+    "@supabase/supabase-js": "^2.58.0",
+    "bn.js": "^5.2.5",
+    "bs58": "^6.0.0",
+    "framer-motion": "^12.23.0",
+    "next": "^16.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5"
+  }
+}

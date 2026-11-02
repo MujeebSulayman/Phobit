@@ -1,6 +1,6 @@
 # usedebit — app
 
-A Next.js 16 (App Router), React 19, Tailwind CSS v4 and TypeScript app: the usedebit.app frontend (reconstructed from the compiled mirror in `../usedebit.app`) plus its own backend in `src/server` + `src/app/api`. It talks to your Supabase, RPC, Pinata, Jupiter and pump.fun — nothing of Debit's.
+A Next.js 16 (App Router), React 19, Tailwind CSS v4 and TypeScript app: the usedebit.app frontend (reconstructed from the compiled mirror in `../usedebit.app`) plus its own backend in `src/server` + `src/app/api`. It talks to your Neon database, Supabase (phone sign-in only), RPC, Pinata, Jupiter and pump.fun — nothing of Debit's.
 
 ## Run
 
@@ -10,7 +10,9 @@ npm install
 npm run dev                  # http://localhost:3000
 ```
 
-Database: create a Supabase project, run `supabase/migrations/0001_init.sql` in the SQL editor (or `supabase db push`), and enable phone auth with an SMS provider.
+Database: create a Neon project, set `DATABASE_URL`, and apply the schema with `psql "$DATABASE_URL" -f db/migrations/0001_init.sql` (or paste it into the Neon SQL editor).
+
+Sign-in: create a Supabase project only for phone auth (Auth → Providers → Phone, with an SMS provider) and set the two `NEXT_PUBLIC_SUPABASE_*` values. Its database is not used.
 
 Keeper: `vercel.json` schedules `/api/keeper` every 10 minutes on Vercel. Elsewhere, call it from any scheduler:
 
@@ -46,9 +48,9 @@ src/
   app/            routes, layout, template (page transition), globals.css (theme + component classes)
   components/     layout/, home/, claim/, docs/, explore/, analytics/, ui/, icons, motion (Reveal/Words/EASE)
   lib/            format, contact (phone validation), useWallet (Reown AppKit), supabase, server-data, types
-  server/         backend (server-only): env, db, auth, crypto (creator keys, card encryption), solana,
+  server/         backend (server-only): env, db (Neon, parameterised `sql` tag), auth, crypto (creator keys, card encryption), solana,
                   pump (pump.fun SDK), jupiter, prices, pinata, launch, queries, routing, cards, keeper
-supabase/migrations/   database schema
+db/migrations/         database schema (Neon / Postgres)
 ```
 
 ## Backend design
@@ -57,7 +59,7 @@ supabase/migrations/   database schema
 - **Launch.** `prepare` generates the mint keypair, builds the transaction with the pump.fun SDK (quote = `QUOTE_MINT`, `CREATOR_FEE_BPS`), and signs it as the mint. It also stores the exact message bytes. `submit` rejects anything that isn't byte-identical, broadcasts it, and records the coin. If the client drops before confirmation, the keeper promotes the launch later.
 - **Payout lifecycle.** `sweeping` (internal, recorded before broadcast) → `swept` → `swapped` (USDC received = dollar value) → `unrouted` (no card) or `submitted` → `paid` / `failed`. Every stage is resumable, and a DB lease stops keeper runs from overlapping.
 - **Cards.** `src/server/cards.ts` defines a `CardProvider` interface. The bundled `sandbox` provider issues test card numbers and marks transfers settled **without moving money**: the USDC stays in the treasury. A real issuer adapter is needed before production. Card numbers are stored AES-256-GCM encrypted.
-- **Security.** The recipient identity always comes from the verified Supabase token. All tables are service-role only (RLS on, no policies).
+- **Security.** The recipient identity always comes from the verified Supabase token. Only the server holds `DATABASE_URL`. Every query uses bind parameters.
 
 ## Reconstruction notes
 
