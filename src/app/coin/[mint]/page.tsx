@@ -13,7 +13,7 @@ type Props = { params: Promise<{ mint: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const coin = await getCoin((await params).mint);
-  return coin ? { title: `${coin.name} ($${coin.symbol}) · usedebit.app` } : {};
+  return coin ? { title: `${coin.name} ($${coin.symbol})` } : {};
 }
 
 function Row({ k, children }: { k: string; children: React.ReactNode }) {
@@ -156,7 +156,7 @@ export default async function CoinPage({ params }: Props) {
         <div className="card p-5">
           <div className="eyebrow">Is this your number?</div>
           <p className="mt-2 text-[13px] leading-relaxed text-fg-2">
-            Fees from this coin are held for {coin.recipient.masked}. Verify it once and every sweep lands on your Debit
+            Fees from this coin are held for {coin.recipient.masked}. Verify it once and every sweep lands on your Phobit
             card in USD.
           </p>
           <Link href="/claim" className="btn btn-apple mt-4 w-full">

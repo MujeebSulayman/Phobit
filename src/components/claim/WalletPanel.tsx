@@ -125,7 +125,7 @@ export function WalletPanel({
         <div className="mt-4 rounded-xl border border-amber/25 bg-amber/10 px-4 py-3 text-[12.5px]">
           <div className="font-medium text-amber">Automatic payouts are off</div>
           <div className="mt-0.5 text-amber/80">
-            Your fees are safe in your wallet&apos;s fee vault. Allow Debit to collect them and convert them to USDC for
+            Your fees are safe in your wallet&apos;s fee vault. Allow Phobit to collect them and convert them to USDC for
             you — it can only do that, and you can revoke it any time.
           </div>
           <button onClick={enableAutoPayouts} disabled={busy !== null} className="btn btn-secondary mt-3 h-9 text-[12px]">

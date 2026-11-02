@@ -36,8 +36,8 @@ export async function getFeed(): Promise<FeedItem[]> {
   }));
 }
 
-export async function getFees(): Promise<{ series: number[]; totalUsd: number }> {
+export async function getFees(): Promise<{ series: number[]; totalUsd: number; payouts: number }> {
   const data = await safe("fees", () => q.analytics(30), null);
-  if (!data) return { series: Array(30).fill(0), totalUsd: 0 };
-  return { series: data.series.map((d) => d.usdCents / 100), totalUsd: data.totals.usdCents / 100 };
+  if (!data) return { series: Array(30).fill(0), totalUsd: 0, payouts: 0 };
+  return { series: data.series.map((d) => d.usdCents / 100), totalUsd: data.totals.usdCents / 100, payouts: data.totals.payouts };
 }

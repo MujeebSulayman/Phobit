@@ -14,7 +14,7 @@ const SECTIONS: TocEntry[] = [
   { id: "quickstart", title: "Launch in two minutes" },
   { id: "recipients", title: "Recipients", group: "Fees" },
   { id: "claiming", title: "Claiming fees" },
-  { id: "debit-card", title: "Your Debit card" },
+  { id: "debit-card", title: "Your Phobit card" },
   { id: "fee-mechanics", title: "Fee mechanics" },
   { id: "attribution", title: "Per-coin attribution" },
   { id: "sweeping", title: "Sweeping, swapping & bridging" },
@@ -188,9 +188,9 @@ export function DocsView() {
       <article className="min-w-0 max-w-[720px]">
         <header className="mb-14">
           <div className="eyebrow">Documentation</div>
-          <h1 className="mt-3 text-[40px] font-semibold leading-[1.05] tracking-[-0.035em]">Debit, explained.</h1>
+          <h1 className="brackets mt-5 font-display text-[44px] font-semibold leading-[0.95] tracking-[-0.045em] sm:text-[56px]">Phobit, <span className="text-iris">explained.</span></h1>
           <p className="mt-4 text-[17px] leading-relaxed text-fg-2">
-            Everything about launching a coin on pump.fun through Debit, how its creator fees are attributed, swept and
+            Everything about launching a coin on pump.fun through Phobit, how its creator fees are attributed, swept and
             priced, and how the person whose number you enter claims them to an Apple Pay card.
           </p>
           <div className="mt-6 flex flex-wrap gap-2">
@@ -204,7 +204,7 @@ export function DocsView() {
         </header>
         <Section id="overview" title="Overview">
           <p>
-            {"Debit is a launchpad for "}
+            {"Phobit is a launchpad for "}
             <a href="https://pump.fun" target="_blank" rel="noreferrer">
               pump.fun
             </a>
@@ -229,7 +229,7 @@ export function DocsView() {
             <li>
               <strong>Keeper</strong>
               {
-                " — Debit's scheduled job that collects fees from each coin's vault, converts them to USDC, bridges them, and settles dollars onto the recipient's card."
+                " — Phobit's scheduled job that collects fees from each coin's vault, converts them to USDC, bridges them, and settles dollars onto the recipient's card."
               }
             </li>
           </ul>
@@ -251,7 +251,7 @@ export function DocsView() {
               ],
               [
                 "Claim",
-                "The recipient opens Claim fees, verifies the number with a texted code, and creates their Debit card — a virtual Visa they can add to Apple Wallet. Unclaimed payouts are released the moment the card exists.",
+                "The recipient opens Claim fees, verifies the number with a texted code, and creates their Phobit card — a virtual Visa they can add to Apple Wallet. Unclaimed payouts are released the moment the card exists.",
               ],
               [
                 "Get paid",
@@ -284,7 +284,7 @@ export function DocsView() {
           </ol>
           <p>
             {"Tell the recipient to visit "}
-            <code>usedebit.app/claim</code>. They don't need a wallet, an account, or any crypto knowledge.
+            <code>phobit/claim</code>. They don't need a wallet, an account, or any crypto knowledge.
           </p>
         </Section>
         <Section id="recipients" title="Recipients">
@@ -302,7 +302,7 @@ export function DocsView() {
           />
           <p>
             Several coins can point at the same recipient; they all pay into the same claim. The recipient can be the
-            launcher, a friend, a creator you want to support, or anyone else — Debit never contacts them on your
+            launcher, a friend, a creator you want to support, or anyone else — Phobit never contacts them on your
             behalf, so send them the claim link yourself.
           </p>
           <Callout tone="warn">
@@ -335,7 +335,7 @@ export function DocsView() {
             <li>
               <strong>Create your card.</strong>
               {" Tap "}
-              <em>Create my Debit card</em>
+              <em>Create my Phobit card</em>
               {
                 ". We issue a virtual Visa debit card in a few seconds — number, expiry and CVV are yours to reveal and copy. Tap "
               }
@@ -353,9 +353,9 @@ export function DocsView() {
             {" and are released when you create another."}
           </p>
         </Section>
-        <Section id="debit-card" title="Your Debit card">
+        <Section id="debit-card" title="Your Phobit card">
           <p>
-            {"Debit issues every recipient a "}
+            {"Phobit issues every recipient a "}
             <strong>virtual Visa debit card</strong>
             {
               " at claim time. Settled payouts land on it as US dollars, and the card can be added to Apple Wallet so the money is spendable immediately — in stores, in apps and online — with Face ID."
@@ -386,7 +386,7 @@ export function DocsView() {
           </p>
         </Section>
         <Section id="fee-mechanics" title="Fee mechanics">
-          <p>pump.fun charges fees on every trade. The schedule is set by the protocol, not by Debit:</p>
+          <p>pump.fun charges fees on every trade. The schedule is set by the protocol, not by Phobit:</p>
           <Table
             head={["Leg", "Rate", "Goes to"]}
             rows={[
@@ -395,14 +395,14 @@ export function DocsView() {
             ]}
           />
           <p>
-            {"Every Debit coin is "}
+            {"Every Phobit coin is "}
             <strong>quoted in AAPLx</strong>
             {
               " — tokenized Apple stock on Solana — so trades and fees are denominated in Apple shares rather than SOL. On a 1 AAPLx buy, 0.03 AAPLx lands in the creator vault. Fees continue after the curve completes: once the coin graduates to the pump AMM, swaps there pay the creator fee into a companion vault for the same key, and the keeper sweeps both."
             }
           </p>
           <p>
-            Debit takes nothing from the creator fee. Costs of converting to USD and pushing to a card are shown on each
+            Phobit takes nothing from the creator fee. Costs of converting to USD and pushing to a card are shown on each
             payout.
           </p>
         </Section>
@@ -411,7 +411,7 @@ export function DocsView() {
             {"pump.fun pays creator fees into a vault keyed by the coin's "}
             <code>creator</code>
             {
-              " public key. On Debit, that creator is the recipient's own Solana wallet, created for their phone number at launch time — before they've ever signed up:"
+              " public key. On Phobit, that creator is the recipient's own Solana wallet, created for their phone number at launch time — before they've ever signed up:"
             }
           </p>
           <pre>{`wallet  = privy_wallet_for(phone)   // created once per number
@@ -419,7 +419,7 @@ creator = wallet
 vault   = creator_vault_pda(wallet)`}</pre>
           <ul>
             <li>When the recipient signs in with that number and the texted code, the wallet is theirs.</li>
-            <li>The fees are never held by Debit: they sit in the recipient&apos;s vault until collected into their wallet.</li>
+            <li>The fees are never held by Phobit: they sit in the recipient&apos;s vault until collected into their wallet.</li>
             <li>
               Several coins naming the same number share one vault, so a payout can cover more than one coin. It&apos;s
               shown as &ldquo;Several coins&rdquo; in that case.
@@ -442,7 +442,7 @@ vault   = creator_vault_pda(wallet)`}</pre>
             <li>
               {"Submits one transaction: "}
               <code>collect_creator_fee</code>
-              {" into the recipient's own wallet. Debit pays the network fee; their wallet needs no SOL."}
+              {" into the recipient's own wallet. Phobit pays the network fee; their wallet needs no SOL."}
             </li>
             <li>
               {"Swaps the collected AAPLx, inside their wallet, to "}
@@ -524,7 +524,7 @@ vault   = creator_vault_pda(wallet)`}</pre>
           <h3>What we store</h3>
           <ul>
             <li>The normalized contact, so we can match claims to coins.</li>
-            <li>Your Debit card details, encrypted at rest, shown only to you after verification.</li>
+            <li>Your Phobit card details, encrypted at rest, shown only to you after verification.</li>
             <li>Coins, sweeps and payouts — all of which are also visible on-chain.</li>
           </ul>
           <h3>What's public</h3>
@@ -552,7 +552,7 @@ vault   = creator_vault_pda(wallet)`}</pre>
               ["Quote asset", "AAPLx (tokenized Apple stock), fixed"],
               ["Creator fee", "3% — pump.fun's maximum"],
               ["Minimum sweep", "0.005 SOL per vault"],
-              ["Debit card", "Virtual Visa debit, Apple Wallet provisioning; Google Wallet soon"],
+              ["Phobit card", "Virtual Visa debit, Apple Wallet provisioning; Google Wallet soon"],
               ["Recipient verification", "Any mobile number that can receive SMS, with country code"],
             ]}
           />
@@ -584,7 +584,7 @@ vault   = creator_vault_pda(wallet)`}</pre>
                 <code key={"5"}>GET /api/recipients</code>,
                 "Bearer only. Your card, coins routing to you, totals by stage, and your payouts.",
               ],
-              [<code key={"6"}>POST /api/card</code>, "Bearer only. Issues your virtual Debit card."],
+              [<code key={"6"}>POST /api/card</code>, "Bearer only. Issues your virtual Phobit card."],
             ]}
           />
         </Section>
@@ -597,18 +597,18 @@ vault   = creator_vault_pda(wallet)`}</pre>
             </dd>
             <dt>Creator fee</dt>
             <dd>
-              The 30 bps slice of every trade that pump.fun pays to the coin's creator key. On Debit, this is what goes
+              The 30 bps slice of every trade that pump.fun pays to the coin's creator key. On Phobit, this is what goes
               to the recipient.
             </dd>
             <dt>Creator vault</dt>
             <dd>
-              The on-chain account that accumulates a creator key's fees. Debit derives one creator key, and so one
+              The on-chain account that accumulates a creator key's fees. Phobit derives one creator key, and so one
               vault, per coin.
             </dd>
             <dt>Bridge</dt>
             <dd>The step that turns a payout's USDC into US dollars on the recipient's card.</dd>
             <dt>Keeper</dt>
-            <dd>Debit's scheduled job that sweeps vaults and routes payouts.</dd>
+            <dd>Phobit's scheduled job that sweeps vaults and routes payouts.</dd>
             <dt>Recipient</dt>
             <dd>The phone number a coin's fees are held for.</dd>
             <dt>Sweep</dt>
@@ -631,7 +631,7 @@ vault   = creator_vault_pda(wallet)`}</pre>
           <Faq q="Do recipients need a wallet or any crypto?">
             No. A phone that receives texts. We issue the card; they add it to Apple Wallet if they like.
           </Faq>
-          <Faq q="Is the Debit card a real card?">
+          <Faq q="Is the Phobit card a real card?">
             Yes — a virtual Visa debit card issued to you at claim time. Use the number online, or add it to Apple
             Wallet and tap to pay in person.
           </Faq>

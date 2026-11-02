@@ -8,7 +8,9 @@ import { VirtualCardView } from "@/components/claim/VirtualCardView";
 import { WalletPanel } from "@/components/claim/WalletPanel";
 import { Icons } from "@/components/icons";
 import { EASE } from "@/components/motion";
+import { LogoMark } from "@/components/Logo";
 import { PhoneInput } from "@/components/PhoneInput";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { RollingNumber } from "@/components/ui/RollingNumber";
 import { StageTrack } from "@/components/ui/StageTrack";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -18,7 +20,7 @@ import type { RecipientDashboard } from "@/lib/types";
 
 type Step = "identify" | "code" | "claim";
 
-const ISSUE_STEPS = ["Verifying your number", "Issuing virtual Visa", "Enabling Apple Pay", "Linking fee vaults"];
+const ISSUE_STEPS = ["Verifying your number", "Issuing virtual Visa", "Activating card", "Linking your wallet"];
 
 function StepIndicator({ step }: { step: Step }) {
   const labels = ["Phone", "Code", "Card"];
@@ -152,13 +154,15 @@ export default function ClaimPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="text-center">
-        <h1 className="text-[34px] font-semibold leading-none tracking-[-0.035em]">Claim fees</h1>
-        <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-fg-2">
-          Someone launched a coin and pointed its creator fees at your phone number. Verify it, set up your Debit card,
-          and every sweep lands there in USD.
-        </p>
-      </div>
+      <PageHeader
+        tag="Claim · phone + code"
+        title={
+          <>
+            Claim your <span className="text-iris">fees.</span>
+          </>
+        }
+        subtitle="Someone launched a coin and pointed its creator fees at your phone number. Verify it with the texted code — the wallet and everything in it is yours."
+      />
 
       {step !== "claim" && (
         <div className="card mt-10 p-7">
@@ -252,11 +256,11 @@ export default function ClaimPage() {
                   ) : (
                     <div className="rounded-2xl border border-line bg-gradient-to-br from-[#1c1c1f] to-[#0e0e10] p-5">
                       <div className="flex items-center justify-between">
-                        <Icons.Apple width={24} height={24} />
-                        <span className="text-[11px] uppercase tracking-wider text-fg-3">Debit</span>
+                        <LogoMark size={24} />
+                        <span className="text-[11px] uppercase tracking-wider text-fg-3">Phobit</span>
                       </div>
                       <div className="mt-8 text-[15px] font-medium">
-                        {data.recipient?.card_display_name ?? "Apple Pay card"}
+                        {data.recipient?.card_display_name ?? "Phobit card"}
                       </div>
                     </div>
                   )}
@@ -395,10 +399,10 @@ export default function ClaimPage() {
           ) : (
             <div className="card p-7">
               <div className="eyebrow">Step 3 of 3</div>
-              <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.02em]">Set up your Debit card</h2>
+              <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.02em]">Set up your Phobit card</h2>
               <p className="mt-2 text-[13.5px] leading-relaxed text-fg-2">
                 We issue you a virtual Visa debit card. Swept fees are converted to USDC, bridged, and settled onto it — and
-                you can add it to Apple Wallet to spend instantly.
+                you can spend it anywhere Visa is accepted.
               </p>
               {data.totals.waitingCents > 0 && (
                 <div className="mt-5 flex items-center justify-between rounded-2xl border border-amber/30 bg-amber/10 px-4 py-3">
@@ -448,7 +452,7 @@ export default function ClaimPage() {
                   ) : (
                     <motion.div key="cta" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                       <button onClick={issueCard} className="btn btn-apple w-full">
-                        <Icons.Apple width={18} height={18} /> Create my Debit card
+                        <LogoMark size={18} /> Create my Phobit card
                       </button>
                       <p className="mt-3 text-center text-[12px] leading-relaxed text-fg-3">
                         Takes a few seconds. No credit check, no account, nothing to download.

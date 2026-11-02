@@ -369,7 +369,7 @@ export default function LaunchPage() {
           <Section
             n="02"
             title="Fee recipient"
-            hint="Every trade pays a 3% creator fee, in AAPLx, into this coin's own vault. Enter the phone number of the person who should receive it. They verify it once with a texted code, create their Debit card, and get paid in USD on every sweep."
+            hint="Every trade pays a 3% creator fee, in AAPLx, into this coin's own vault. Enter the phone number of the person who should receive it. They verify it once with a texted code, create their Phobit card, and get paid in USD on every sweep."
           >
             <Field label="Phone number" htmlFor="recipient">
               <PhoneInput value={recipient} onValue={setRecipient} />
@@ -398,7 +398,7 @@ export default function LaunchPage() {
                   </>
                 ) : (
                   <>
-                    <Icons.Apple width={14} height={14} className="mt-0.5 shrink-0" />
+                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_6px_#7cf7e4]" />
                     <span>Can be you, a friend, or a creator you want to support. They&apos;ll get a text to claim.</span>
                   </>
                 )}
@@ -489,7 +489,7 @@ export default function LaunchPage() {
                 v={
                   parsedRecipient && recipientOk ? (
                     <span className="inline-flex items-center gap-1.5">
-                      <Icons.Apple width={13} height={13} /> {maskContact(parsedRecipient.kind, parsedRecipient.contact)}
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent" /> {maskContact(parsedRecipient.kind, parsedRecipient.contact)}
                     </span>
                   ) : (
                     <span className="text-fg-3">—</span>
@@ -569,7 +569,7 @@ export default function LaunchPage() {
             <div className="eyebrow">After launch</div>
             <ol className="mt-3 flex flex-col gap-3 text-[13px] leading-relaxed text-fg-2">
               <li className="flex gap-3">
-                <span className="text-fg-3">1</span> The coin is live on pump.fun and on your Debit coin page.
+                <span className="text-fg-3">1</span> The coin is live on pump.fun and on your Phobit coin page.
               </li>
               <li className="flex gap-3">
                 <span className="text-fg-3">2</span> Every trade pays 3% in AAPLx into the coin&apos;s vault. Our keeper

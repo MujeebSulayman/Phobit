@@ -42,16 +42,18 @@ export function Words({
   return (
     <span className={className} aria-label={text}>
       {words.map((word, i) => (
-        <span key={i} className="inline-block overflow-hidden align-bottom">
-          <motion.span
-            className="inline-block"
-            initial={{ y: "110%", opacity: 0, filter: "blur(6px)" }}
-            animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
-            transition={{ duration: 0.6, delay: delay + i * step, ease: EASE }}
-          >
-            {word}
-          </motion.span>
-          {i < words.length - 1 && <span> </span>}
+        <span key={i}>
+          <span className="inline-block overflow-hidden pb-[0.08em] align-bottom">
+            <motion.span
+              className="inline-block"
+              initial={{ y: "110%", opacity: 0, filter: "blur(6px)" }}
+              animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
+              transition={{ duration: 0.6, delay: delay + i * step, ease: EASE }}
+            >
+              {word}
+            </motion.span>
+          </span>
+          {i < words.length - 1 && " "}
         </span>
       ))}
     </span>

@@ -9,7 +9,7 @@ import { formatCents, timeAgo } from "@/lib/format";
 import type { FeedItem } from "@/lib/types";
 
 const PREVIEW: FeedItem[] = [
-  { id: "p1", coin: "Debit Coin", recipient: "+1 ••• ••• 0199", usdCents: 1842, status: "submitted", createdAt: "" },
+  { id: "p1", coin: "Phobit Coin", recipient: "+1 ••• ••• 0199", usdCents: 1842, status: "submitted", createdAt: "" },
   { id: "p2", coin: "Orbit", recipient: "+1 ••• ••• 8831", usdCents: 627, status: "paid", createdAt: "" },
   { id: "p3", coin: "Moonbean", recipient: "+44 ••• ••• 7731", usdCents: 9310, status: "submitted", createdAt: "" },
   { id: "p4", coin: "Glass", recipient: "+91 ••• ••• 6102", usdCents: 211, status: "unrouted", createdAt: "" },
@@ -34,7 +34,7 @@ export function PaymentsFeed({ items }: { items: FeedItem[] }) {
       <div className="mb-3 flex items-center justify-between px-1">
         <span className="eyebrow">{live ? "Latest sweeps" : "Preview"}</span>
         <span className="flex items-center gap-1.5 text-[11px] text-fg-3">
-          <span className="live-dot h-1.5 w-1.5 rounded-full bg-green" /> Keeper active
+          <span className="live-dot h-1.5 w-1.5 rounded-full bg-accent" /> Keeper active
         </span>
       </div>
       <div className="relative flex flex-1 flex-col gap-2 overflow-hidden">

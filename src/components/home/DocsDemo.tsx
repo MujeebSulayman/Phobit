@@ -4,21 +4,21 @@ import { motion } from "framer-motion";
 import { EASE } from "@/components/motion";
 
 const ROWS = [
-  ["seed", "32", "HMAC(master, mint)"],
-  ["creator", "32", "ed25519(seed).pub"],
+  ["phone", "e164", "+1 ••• ••• 0123"],
+  ["wallet", "32", "privy_wallet(phone)"],
+  ["creator", "32", "= wallet"],
   ["vault", "32", "pda(creator)"],
-  ["fees", "u64", "balance(vault)"],
-  ["card", "—", "usd(fees) → Apple Pay"],
+  ["payout", "usdc", "swap(fees) → wallet"],
 ];
 
 export function DocsDemo() {
   return (
     <div className="flex h-full flex-col p-5">
-      <div className="eyebrow">Attribution is per-mint</div>
+      <div className="eyebrow">The number is the account</div>
       <p className="mt-2 text-[12.5px] leading-relaxed text-fg-3">
-        One derived creator key per coin. Its vault balance is exactly that coin&apos;s unswept fees.
+        A wallet is made for the number at launch and set as the coin&apos;s creator. Nobody else holds the fees.
       </p>
-      <div className="mt-3 overflow-hidden rounded-xl border border-line bg-bg-elev font-mono text-[11px]">
+      <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-black/30 font-mono text-[11px]">
         <div className="grid grid-cols-[72px_40px_1fr] gap-2 border-b border-line px-3 py-1.5 text-[10px] uppercase tracking-wider text-fg-3">
           <span>Field</span>
           <span>Len</span>

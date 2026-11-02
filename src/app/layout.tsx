@@ -1,44 +1,39 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { Suspense } from "react";
-import { MobileNav } from "@/components/layout/MobileNav";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Topbar } from "@/components/layout/Topbar";
+import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
+import { Background } from "@/components/fx/Background";
+import { LiquidGlass } from "@/components/fx/LiquidGlass";
+import { Footer } from "@/components/layout/Footer";
+import { MobileDock } from "@/components/layout/MobileDock";
+import { Nav } from "@/components/layout/GlassNav";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const display = Bricolage_Grotesque({ variable: "--font-display-face", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "usedebit.app",
-  description: "Launch coins on pump.fun. Creator fees land on your Apple Pay card.",
+  title: { default: "Phobit — fees, routed to a phone number", template: "%s · Phobit" },
+  description: "Launch a coin on pump.fun and name a phone number. Every creator fee lands in that person's own wallet.",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  themeColor: "#05060a",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${display.variable} h-full antialiased`}>
       <body className="min-h-full">
         <Providers>
-          <div className="min-h-screen">
-            <Suspense fallback={<aside className="hidden lg:block fixed inset-y-0 left-0 w-[240px] border-r border-line bg-bg" />}>
-              <Sidebar />
-            </Suspense>
-            <div className="lg:pl-[240px]">
-              <Suspense fallback={<header className="sticky top-0 z-30 h-16 border-b border-line bg-bg/70 backdrop-blur-2xl" />}>
-                <Topbar />
-              </Suspense>
-              <main className="mx-auto w-full max-w-[1200px] px-5 pb-28 pt-10 lg:px-10 lg:pb-20">{children}</main>
-            </div>
-            <Suspense fallback={null}>
-              <MobileNav />
-            </Suspense>
-          </div>
+          <Background />
+          <LiquidGlass />
+          <Nav />
+          <main className="relative mx-auto w-full max-w-[1240px] px-5 pb-10 pt-28 sm:pt-32 lg:px-10">{children}</main>
+          <Footer />
+          <MobileDock />
         </Providers>
       </body>
     </html>

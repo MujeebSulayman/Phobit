@@ -6,7 +6,7 @@ import { Icons } from "@/components/icons";
 import { EASE } from "@/components/motion";
 
 const COINS = [
-  { name: "Debit Coin", symbol: "DBT" },
+  { name: "Phobit Coin", symbol: "PHO" },
   { name: "Orbit", symbol: "ORB" },
   { name: "Moonbean", symbol: "BEAN" },
   { name: "Satori", symbol: "SAT" },
@@ -137,7 +137,7 @@ export function LaunchDemo() {
             transition={{ duration: 0.3, ease: EASE }}
             className={`text-[12px] ${done ? "text-green" : "text-fg-3"}`}
           >
-            {done ? "Fees now route to your Apple Pay card" : step < 0 ? "Filling in details…" : "Launching…"}
+            {done ? "Fees now route to that number" : step < 0 ? "Filling in details…" : "Launching…"}
           </motion.span>
         </AnimatePresence>
         <motion.span

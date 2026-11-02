@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { Icons } from "@/components/icons";
+import { LogoMark } from "@/components/Logo";
 import { EASE } from "@/components/motion";
 import type { VirtualCard } from "@/lib/types";
 
@@ -63,11 +64,11 @@ export function VirtualCardView({
         <div className="relative flex h-full flex-col justify-between p-[6%]">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
-              <Icons.Apple width={22} height={22} />
-              <span className="text-[13px] font-semibold tracking-tight">Debit</span>
+              <LogoMark size={22} />
+              <span className="text-[13px] font-semibold tracking-tight">Phobit</span>
             </div>
             <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-fg-2">
-              Virtual · Debit
+              Virtual · Phobit
             </span>
           </div>
           <div>
@@ -116,11 +117,11 @@ export function VirtualCardView({
         <div className="ml-auto">
           {inWallet ? (
             <span className="inline-flex h-9 items-center gap-1.5 rounded-full bg-green/10 px-3.5 text-[12.5px] font-medium text-green">
-              <Icons.Check width={14} height={14} /> In Apple Wallet
+              <Icons.Check width={14} height={14} /> In your wallet
             </span>
           ) : (
             <button onClick={onAddToWallet} disabled={adding} className="btn btn-apple h-9 px-3.5 text-[12.5px]">
-              <Icons.Apple width={14} height={14} /> {adding ? "Adding…" : "Add to Apple Wallet"}
+              {adding ? "Adding…" : "Add to phone wallet"}
             </button>
           )}
         </div>

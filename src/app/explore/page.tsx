@@ -28,7 +28,7 @@ export default function ExplorePage() {
     <div>
       <PageHeader
         title="Explore"
-        subtitle="Every coin launched through Debit, where its fees go, and whether they've been claimed."
+        subtitle="Every coin launched through Phobit, where its fees go, and whether they've been claimed."
       />
       <Suspense fallback={<GridSkeleton />}>
         <Coins />
