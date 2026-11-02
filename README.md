@@ -6,6 +6,9 @@ A Next.js 16 (App Router), React 19, Tailwind CSS v4 and TypeScript app: the use
 
 ```bash
 cp .env.example .env.local   # fill in the values (each one is documented there)
+# Optional, with defaults: CREATOR_FEE_BPS=300, PRIORITY_FEE_MICRO_LAMPORTS=100000, MIN_SWEEP_LAMPORTS=5000000,
+# JUPITER_API_URL / JUPITER_API_KEY, IPFS_PUBLIC_GATEWAY, CARD_PROVIDER=sandbox, NEXT_PUBLIC_SITE_URL,
+# NEXT_PUBLIC_PINATA_GATEWAY, NEXT_PUBLIC_PRIVY_POLICY_ID (recommended, see Privy below)
 npm install
 npm run dev                  # http://localhost:3000
 ```
@@ -16,7 +19,7 @@ npm run dev                  # http://localhost:3000
 1. Login methods: **SMS only**. Recipients sign in with the phone number a launcher entered and nothing else, so the wallet made for that number is the one they get.
 2. Enable Solana embedded wallets.
 3. Create an authorization key, then a key quorum containing it. Set `NEXT_PUBLIC_PRIVY_SIGNER_ID` (quorum id) and `PRIVY_AUTHORIZATION_KEY` (its private key).
-4. Recommended: create a policy for that signer allowing only the programs the keeper uses (pump `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P`, pump-amm `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`, Jupiter `JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4`, the token/ATA/compute-budget programs) and set `NEXT_PUBLIC_PRIVY_POLICY_ID`. Without it, our signer could move anything in recipient wallets.
+4. Recommended: create a policy for that signer allowing only the programs the keeper uses (pump `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P`, pump-amm `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`, Jupiter `JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4`, the token/ATA/compute-budget programs) and add `NEXT_PUBLIC_PRIVY_POLICY_ID=<policy id>` to `.env`. Without it, our signer could move anything in recipient wallets.
 
 **Treasury.** `TREASURY_SECRET_KEY` only pays network fees and token-account rent for recipient wallets, which hold no SOL. Keep ~0.2 SOL in it. It never holds anyone's fees.
 
