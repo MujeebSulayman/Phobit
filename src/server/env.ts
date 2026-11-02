@@ -13,15 +13,20 @@ function optional(name: string, fallback: string): string {
 
 /** Read lazily so a missing variable only breaks the endpoints that need it. */
 export const env = {
-  /** Neon pooled connection string. */
-  databaseUrl: () => required("DATABASE_URL"),
-  /** Supabase is only used to verify phone sign-in tokens from /claim. */
-  supabaseUrl: () => required("NEXT_PUBLIC_SUPABASE_URL"),
-  supabaseAnonKey: () => required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+  /** Supabase is the database. The service-role key never leaves the server. */
+  supabaseUrl: () => required("SUPABASE_URL"),
+  supabaseServiceKey: () => required("SUPABASE_SERVICE_ROLE_KEY"),
+  /** Privy: phone sign-in and the recipients' wallets. */
+  privyAppId: () => required("NEXT_PUBLIC_PRIVY_APP_ID"),
+  privyAppSecret: () => required("PRIVY_APP_SECRET"),
+  /** Key quorum id of our server signer, added to every recipient wallet we create. */
+  privySignerId: () => required("NEXT_PUBLIC_PRIVY_SIGNER_ID"),
+  /** Private key of that key quorum (base64 PKCS8, the "wallet-auth:" prefix is optional). */
+  privyAuthorizationKey: () => required("PRIVY_AUTHORIZATION_KEY").replace(/^wallet-auth:/, ""),
+  /** Optional policy limiting what our signer may do with recipient wallets. */
+  privyPolicyId: () => process.env.NEXT_PUBLIC_PRIVY_POLICY_ID || "",
   rpcUrl: () => required("SOLANA_RPC_URL"),
-  /** 32+ random bytes, hex. Per-coin creator keys are derived from it — losing it loses every vault. */
-  masterSeed: () => required("MASTER_SEED"),
-  /** Base58 secret key or JSON byte array. Pays keeper fees and receives swept fees. */
+  /** Base58 secret key or JSON byte array. Pays network fees for recipient wallets (they hold no SOL). */
   treasurySecret: () => required("TREASURY_SECRET_KEY"),
   /** Quote asset every coin is paired with (AAPLx). Must be accepted by pump.fun create_v2. */
   quoteMint: () => required("QUOTE_MINT"),

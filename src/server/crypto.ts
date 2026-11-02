@@ -1,6 +1,6 @@
 import "server-only";
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 import { env } from "./env";
 
@@ -8,15 +8,6 @@ function hexKey(hex: string, name: string): Buffer {
   const key = Buffer.from(hex, "hex");
   if (key.length < 32) throw new Error(`${name} must be at least 32 bytes of hex`);
   return key;
-}
-
-/**
- * Per-coin creator key: seed = HMAC-SHA256(master_seed, mint), creator = ed25519(seed).
- * Nothing per coin is stored; the keeper re-derives it whenever it sweeps.
- */
-export function creatorKeypair(mint: PublicKey): Keypair {
-  const seed = createHmac("sha256", hexKey(env.masterSeed(), "MASTER_SEED")).update(mint.toBytes()).digest();
-  return Keypair.fromSeed(seed);
 }
 
 let treasury: Keypair | null = null;

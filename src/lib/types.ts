@@ -39,7 +39,8 @@ export type FeedItem = {
 /** A payout row as returned by /api/payouts and /api/recipients. */
 export type Payout = {
   id: string;
-  mint: string;
+  /** Null when one collection from the recipient's wallet covered several coins. */
+  mint: string | null;
   lamports: number;
   usdc_amount: number | null;
   usd_cents: number | null;
@@ -66,6 +67,8 @@ export type RecipientDashboard = {
     card_display_name?: string | null;
   } | null;
   coins: Pick<Coin, "mint" | "name" | "symbol" | "image_url" | "fees_swept_lamports">[];
+  /** The recipient's own Solana wallet (Privy). Fees are collected into it and converted to USDC. */
+  wallet: RecipientWallet | null;
   payouts: Payout[];
   totals: { settledCents: number; inFlightCents: number; waitingCents: number; count: number };
 };
@@ -76,3 +79,16 @@ export type AnalyticsResponse = {
   series: { date: string; usdCents: number }[];
   solUsd: number | null;
 };
+
+export type RecipientWallet = {
+  address: string;
+  /** USDC sitting in the wallet, in cents. */
+  usdcCents: number;
+  /** Fees still waiting in pump.fun's vault for this wallet, indicative USD cents. */
+  unclaimedCents: number | null;
+  /** Our server signer is on the wallet, so fees are collected and converted automatically. */
+  autoPayouts: boolean;
+};
+
+/** POST /api/wallet/withdraw */
+export type WithdrawBuildResponse = { transaction: string; signature: string };

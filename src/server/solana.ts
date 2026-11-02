@@ -1,6 +1,7 @@
 import "server-only";
 import {
   ComputeBudgetProgram,
+  type AddressLookupTableAccount,
   Connection,
   PublicKey,
   TransactionMessage,
@@ -34,9 +35,14 @@ export function computeBudget(units: number): TransactionInstruction[] {
 }
 
 /** Builds a v0 transaction; signs with `signers` when given (the payer may sign later). */
-export async function buildTransaction(payer: PublicKey, instructions: TransactionInstruction[], signers: Keypair[] = []) {
+export async function buildTransaction(
+  payer: PublicKey,
+  instructions: TransactionInstruction[],
+  signers: Keypair[] = [],
+  lookupTables: AddressLookupTableAccount[] = [],
+) {
   const { blockhash, lastValidBlockHeight } = await connection().getLatestBlockhash("confirmed");
-  const message = new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions }).compileToV0Message();
+  const message = new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions }).compileToV0Message(lookupTables);
   const tx = new VersionedTransaction(message);
   if (signers.length) tx.sign(signers);
   return { tx, lastValidBlockHeight };

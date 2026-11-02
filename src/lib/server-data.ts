@@ -28,7 +28,7 @@ export async function getFeed(): Promise<FeedItem[]> {
   const payouts = await safe("feed", () => q.listPayouts({ limit: 3 }), []);
   return payouts.map((p) => ({
     id: p.id,
-    coin: p.coin?.name ?? p.mint.slice(0, 6),
+    coin: p.coin?.name ?? "Several coins",
     recipient: p.recipient ?? "",
     usdCents: p.usd_cents ?? 0,
     status: p.status,

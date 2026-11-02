@@ -64,13 +64,13 @@ export default function PayoutsPage() {
               key={p.id}
               className={`grid grid-cols-[1fr_auto] items-center gap-3 border-b border-line px-5 py-3.5 last:border-0 ${COLS} sm:gap-4`}
             >
-              <Link href={`/coin/${p.mint}`} className="flex min-w-0 items-center gap-3 cursor-pointer">
+              <Link href={p.mint ? `/coin/${p.mint}` : "/explore"} className="flex min-w-0 items-center gap-3 cursor-pointer">
                 <span className="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-card-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   {img && <img src={img} alt="" className="h-full w-full object-cover" />}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium">Fees · {p.coin?.name ?? p.mint.slice(0, 6)}</span>
+                  <span className="block truncate text-[13px] font-medium">Fees · {p.coin?.name ?? "Several coins"}</span>
                   <span className="block text-[12px] text-fg-3">
                     {timeAgo(p.created_at)} ago
                     {p.sweep_signature && (

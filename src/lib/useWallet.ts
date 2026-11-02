@@ -1,32 +1,39 @@
 "use client";
 
-import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
-import type { Provider } from "@reown/appkit-adapter-solana/react";
-import type { Transaction, VersionedTransaction } from "@solana/web3.js";
-import { useCallback, useEffect, useState } from "react";
+import { useConnectWallet } from "@privy-io/react-auth";
+import { useSignTransaction, useWallets, type ConnectedStandardSolanaWallet } from "@privy-io/react-auth/solana";
+import { VersionedTransaction } from "@solana/web3.js";
+import { useCallback } from "react";
 
-/** Solana wallet state from Reown AppKit, safe to read during SSR/hydration. */
+/** Privy's own embedded wallet registers under this name; launchers use their external wallet. */
+const EMBEDDED = "Privy";
+
+export function isEmbedded(w: ConnectedStandardSolanaWallet) {
+  return w.standardWallet.name === EMBEDDED;
+}
+
+/** The launcher's external Solana wallet (Phantom, Solflare, …) via Privy. */
 export function useWallet() {
-  const { open } = useAppKit();
-  const { address, isConnected } = useAppKitAccount({ namespace: "solana" });
-  const { walletProvider } = useAppKitProvider<Provider>("solana");
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const { ready, wallets } = useWallets();
+  const { connectWallet } = useConnectWallet();
+  const { signTransaction: privySign } = useSignTransaction();
+  const wallet = ready ? (wallets.find((w) => !isEmbedded(w)) ?? null) : null;
 
   const signTransaction = useCallback(
-    async <T extends Transaction | VersionedTransaction>(tx: T): Promise<T> => {
-      if (!walletProvider) throw new Error("Wallet not connected");
-      return walletProvider.signTransaction(tx);
+    async (tx: VersionedTransaction): Promise<VersionedTransaction> => {
+      if (!wallet) throw new Error("Wallet not connected");
+      const { signedTransaction } = await privySign({ transaction: tx.serialize(), wallet });
+      return VersionedTransaction.deserialize(signedTransaction);
     },
-    [walletProvider],
+    [wallet, privySign],
   );
 
-  const connected = mounted && !!(isConnected && address);
   return {
-    address: connected ? address! : null,
-    connected,
-    connect: () => open({ view: "Connect" }),
-    account: () => open({ view: "Account" }),
+    address: wallet?.address ?? null,
+    connected: !!wallet,
+    connect: () => connectWallet({ walletChainType: "solana-only" }),
+    /** Disconnects the wallet (Privy has no account sheet for external wallets). */
+    account: () => wallet?.disconnect(),
     signTransaction,
   };
 }

@@ -115,3 +115,10 @@ export async function liveState(mint: PublicKey, creator: PublicKey): Promise<Li
     quoteMint: quote,
   };
 }
+
+/** What the creator's vaults (curve + AMM) hold in the configured quote mint, raw units. */
+export async function vaultBalance(creator: PublicKey): Promise<bigint> {
+  const quote = await quoteMint();
+  const balances = await pump().getCreatorVaultQuoteBalances(creator, [quote.mint]);
+  return BigInt((balances.find((b) => b.mint.equals(quote.mint))?.total ?? new BN(0)).toString());
+}

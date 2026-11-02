@@ -2,12 +2,12 @@ import "server-only";
 import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import BN from "bn.js";
 import { parseContact, maskContact } from "@/lib/contact";
-import { creatorKeypair } from "./crypto";
-import { one, sql, transaction } from "./db";
+import { db, must } from "./db";
 import { env, SOL_MINT } from "./env";
 import { HttpError } from "./http";
 import * as jupiter from "./jupiter";
 import { ipfsUrl, pinFile, pinJson } from "./pinata";
+import { hasServerSigner, walletForPhone } from "./privy";
 import { createInstructions, quoteMint } from "./pump";
 import { buildTransaction, computeBudget, confirm, connection, sendAndConfirm, tokenDelta, TxFailedError } from "./solana";
 
@@ -102,7 +102,16 @@ type PreparePayload = {
   image: string;
   twitter: string;
   website: string;
-  recipient: { key: string; kind: "phone"; contact: string; masked: string };
+  recipient: {
+    key: string;
+    kind: "phone";
+    contact: string;
+    masked: string;
+    privy_user_id: string;
+    wallet_id: string;
+    wallet_address: string;
+    auto_payouts: boolean;
+  };
 };
 
 /** POST /api/launch/prepare — builds create(+buy), signs it with a fresh mint, stores what was signed. */
@@ -121,8 +130,11 @@ export async function prepare(body: Record<string, unknown>) {
   const quoteAmountStr = String(body.quoteAmount ?? "0");
   if (!/^\d{1,30}$/.test(quoteAmountStr)) throw new HttpError(400, "Invalid quoteAmount");
 
+  // The coin's pump.fun creator is the recipient's own Privy wallet, created now if they've never
+  // signed in. Fees accrue to that wallet's vault: nobody else, including us, owns them.
+  const recipientWallet = await recipientWalletFor(parsed.key, parsed.contact);
   const mint = Keypair.generate();
-  const creator = creatorKeypair(mint.publicKey).publicKey;
+  const creator = new PublicKey(recipientWallet.wallet_address);
   const instructions = await createInstructions({
     mint: mint.publicKey,
     creator,
@@ -143,13 +155,29 @@ export async function prepare(body: Record<string, unknown>) {
     image: text(body.image, "Image", 200),
     twitter: twitter(body.twitter),
     website: url(body.website, "Website"),
-    recipient: { key: parsed.key, kind: "phone", contact: parsed.contact, masked: maskContact("phone", parsed.contact) },
+    recipient: { key: parsed.key, kind: "phone", contact: parsed.contact, masked: maskContact("phone", parsed.contact), ...recipientWallet },
   };
-  await sql`
-    insert into pending_launches (mint, user_wallet, message, last_valid_block_height, payload)
-    values (${mint.publicKey.toBase58()}, ${user.toBase58()}, ${Buffer.from(tx.message.serialize()).toString("base64")},
-            ${lastValidBlockHeight}, ${JSON.stringify(payload)}::jsonb)`;
+  must(
+    await db().from("pending_launches").insert({
+      mint: mint.publicKey.toBase58(),
+      user_wallet: user.toBase58(),
+      message: Buffer.from(tx.message.serialize()).toString("base64"),
+      last_valid_block_height: lastValidBlockHeight,
+      payload,
+    }),
+  );
   return { mint: mint.publicKey.toBase58(), transaction: Buffer.from(tx.serialize()).toString("base64") };
+}
+
+/** The recipient's wallet: from our records when we've seen the number before, otherwise from Privy. */
+async function recipientWalletFor(key: string, contact: string) {
+  const known = must(
+    await db().from("recipients").select("privy_user_id, wallet_id, wallet_address, auto_payouts").eq("key", key).maybeSingle(),
+  ) as { privy_user_id: string | null; wallet_id: string | null; wallet_address: string | null; auto_payouts: boolean } | null;
+  if (known?.privy_user_id && known.wallet_id && known.wallet_address)
+    return { privy_user_id: known.privy_user_id, wallet_id: known.wallet_id, wallet_address: known.wallet_address, auto_payouts: known.auto_payouts };
+  const w = await walletForPhone(contact);
+  return { privy_user_id: w.privyUserId, wallet_id: w.walletId, wallet_address: w.address, auto_payouts: await hasServerSigner(w.walletId) };
 }
 
 type PendingRow = {
@@ -164,7 +192,7 @@ type PendingRow = {
 /** POST /api/launch/submit — refuses anything but the exact transaction prepare signed, then broadcasts. */
 export async function submit(body: { mint?: unknown; signedTransaction?: unknown }) {
   const mint = String(body.mint ?? "");
-  const pending = await one(sql<PendingRow>`select * from pending_launches where mint = ${mint}`);
+  const pending = must(await db().from("pending_launches").select("*").eq("mint", mint).maybeSingle()) as PendingRow | null;
   if (!pending) throw new HttpError(404, "Unknown or expired launch, start again");
 
   const raw = Buffer.from(String(body.signedTransaction ?? ""), "base64");
@@ -181,7 +209,7 @@ export async function submit(body: { mint?: unknown; signedTransaction?: unknown
   const signature = await connection().sendRawTransaction(raw, { skipPreflight: false, maxRetries: 0 }).catch((e) => {
     throw new HttpError(400, `Simulation failed: ${e instanceof Error ? e.message : e}`);
   });
-  await sql`update pending_launches set signature = ${signature} where mint = ${mint}`;
+  must(await db().from("pending_launches").update({ signature }).eq("mint", mint));
   await confirm(signature, { raw, lastValidBlockHeight: pending.last_valid_block_height }).catch(fail);
   await finalize({ ...pending, signature });
   return { mint, signature };
@@ -191,25 +219,30 @@ export async function submit(body: { mint?: unknown; signedTransaction?: unknown
 export async function finalize(pending: PendingRow & { signature: string }) {
   const { payload } = pending;
   const quote = await quoteMint();
-  const r = payload.recipient;
-  const creatorKey = creatorKeypair(new PublicKey(pending.mint)).publicKey.toBase58();
-  await transaction((q) => [
-    q`insert into recipients (key, kind, contact, masked)
-      values (${r.key}, ${r.kind}, ${r.contact}, ${r.masked})
-      on conflict (key) do nothing`,
-    q`insert into coins (mint, name, symbol, description, image_url, metadata_uri, twitter, website,
-                         creator_wallet, creator_key, quote_mint, recipient_key, launch_signature)
-      values (${pending.mint}, ${payload.name}, ${payload.symbol}, ${payload.description}, ${payload.image || null},
-              ${payload.uri}, ${payload.twitter || null}, ${payload.website || null}, ${pending.user_wallet},
-              ${creatorKey}, ${quote.mint.toBase58()}, ${r.key}, ${pending.signature})
-      on conflict (mint) do nothing`,
-    q`delete from pending_launches where mint = ${pending.mint}`,
-  ]);
+  must(
+    await db().rpc("finalize_launch", {
+      p_mint: pending.mint,
+      p_recipient: payload.recipient,
+      p_coin: {
+        name: payload.name,
+        symbol: payload.symbol,
+        description: payload.description,
+        image_url: payload.image || null,
+        metadata_uri: payload.uri,
+        twitter: payload.twitter || null,
+        website: payload.website || null,
+        creator_wallet: pending.user_wallet,
+        creator_key: payload.recipient.wallet_address,
+        quote_mint: quote.mint.toBase58(),
+        launch_signature: pending.signature,
+      },
+    }),
+  );
 }
 
 /** Keeper: promote launches that confirmed after the client gave up; drop stale ones. */
 export async function reconcileLaunches() {
-  const rows = await sql<PendingRow>`select * from pending_launches order by created_at limit 100`;
+  const rows = must(await db().from("pending_launches").select("*").order("created_at").limit(100)) as PendingRow[];
   const height = rows.length ? await connection().getBlockHeight("confirmed") : 0;
   for (const p of rows) {
     if (p.signature) {
@@ -221,6 +254,6 @@ export async function reconcileLaunches() {
       }
     }
     // Past its blockhash's lifetime (plus margin) the transaction can never land.
-    if (height > Number(p.last_valid_block_height) + 150) await sql`delete from pending_launches where mint = ${p.mint}`;
+    if (height > Number(p.last_valid_block_height) + 150) must(await db().from("pending_launches").delete().eq("mint", p.mint));
   }
 }

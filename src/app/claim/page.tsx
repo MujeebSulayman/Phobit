@@ -1,10 +1,11 @@
 "use client";
 
-import type { Session } from "@supabase/supabase-js";
+import { useLoginWithSms, useLogout, usePrivy } from "@privy-io/react-auth";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { VirtualCardView } from "@/components/claim/VirtualCardView";
+import { WalletPanel } from "@/components/claim/WalletPanel";
 import { Icons } from "@/components/icons";
 import { EASE } from "@/components/motion";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -13,7 +14,6 @@ import { StageTrack } from "@/components/ui/StageTrack";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { parseContact } from "@/lib/contact";
 import { formatCents, formatSol, ipfsImage, timeAgo } from "@/lib/format";
-import { getSupabase } from "@/lib/supabase";
 import type { RecipientDashboard } from "@/lib/types";
 
 type Step = "identify" | "code" | "claim";
@@ -47,8 +47,9 @@ function StepIndicator({ step }: { step: Step }) {
 }
 
 export default function ClaimPage() {
-  const supabase = getSupabase();
-  const [session, setSession] = useState<Session | null>(null);
+  const { ready, authenticated, getAccessToken } = usePrivy();
+  const { sendCode: sendSmsCode, loginWithCode } = useLoginWithSms();
+  const { logout } = useLogout();
   const [step, setStep] = useState<Step>("identify");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -58,40 +59,35 @@ export default function ClaimPage() {
   const [issuingStep, setIssuingStep] = useState(-1);
   const [addingToWallet, setAddingToWallet] = useState(false);
 
+  // Returning on the same device skips straight to the dashboard.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        setSession(data.session);
-        setStep("claim");
-      }
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      if (s) setStep("claim");
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [supabase]);
+    if (ready && authenticated) setStep("claim");
+  }, [ready, authenticated]);
 
   const headers = useCallback(
-    () => ({ Authorization: `Bearer ${session?.access_token ?? ""}`, "Content-Type": "application/json" }),
-    [session],
+    async () => ({ Authorization: `Bearer ${(await getAccessToken()) ?? ""}`, "Content-Type": "application/json" }),
+    [getAccessToken],
   );
 
   const refresh = useCallback(async () => {
-    if (!session) return;
-    const res = await fetch("/api/recipients", { headers: headers() }).then((r) => r.json());
+    if (!authenticated) return;
+    const res = await fetch("/api/recipients", { headers: await headers() }).then((r) => r.json());
     if (!res.error) setData(res);
-  }, [session, headers]);
+  }, [authenticated, headers]);
 
   async function sendCode() {
     const parsed = parseContact("phone", phone);
     if ("error" in parsed) return setError(parsed.error);
     setBusy(true);
     setError(null);
-    const { error } = await supabase.auth.signInWithOtp({ phone: parsed.contact });
-    setBusy(false);
-    if (error) return setError(error.message);
-    setStep("code");
+    try {
+      await sendSmsCode({ phoneNumber: parsed.contact });
+      setStep("code");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send the code");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function verifyCode() {
@@ -99,15 +95,18 @@ export default function ClaimPage() {
     if ("error" in parsed) return setError(parsed.error);
     setBusy(true);
     setError(null);
-    const { error } = await supabase.auth.verifyOtp({ phone: parsed.contact, token: code.trim(), type: "sms" });
-    setBusy(false);
-    if (error) return setError(error.message);
-    // onAuthStateChange moves us to the "claim" step.
+    try {
+      await loginWithCode({ code: code.trim() });
+      // The effect above moves us to the "claim" step once Privy reports the session.
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That code didn't work");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
-    setSession(null);
+    await logout();
     setData(null);
     setStep("identify");
     setCode("");
@@ -119,7 +118,7 @@ export default function ClaimPage() {
       setIssuingStep(i);
       await new Promise((r) => setTimeout(r, i === 1 ? 1100 : 750));
     }
-    const res = await fetch("/api/card", { method: "POST", headers: headers() });
+    const res = await fetch("/api/card", { method: "POST", headers: await headers() });
     setIssuingStep(-1);
     if (!res.ok) return setError((await res.json().catch(() => ({}))).error ?? "Could not issue card");
     await refresh();
@@ -128,13 +127,13 @@ export default function ClaimPage() {
   async function addToWallet() {
     setAddingToWallet(true);
     await new Promise((r) => setTimeout(r, 1400));
-    await fetch("/api/card", { method: "PATCH", headers: headers(), body: JSON.stringify({ walletAdded: true }) });
+    await fetch("/api/card", { method: "PATCH", headers: await headers(), body: JSON.stringify({ walletAdded: true }) });
     setAddingToWallet(false);
     await refresh();
   }
 
   async function removeCard() {
-    await fetch("/api/recipients", { method: "DELETE", headers: headers() });
+    await fetch("/api/recipients", { method: "DELETE", headers: await headers() });
     refresh();
   }
 
@@ -221,7 +220,7 @@ export default function ClaimPage() {
         </div>
       )}
 
-      {step === "claim" && session && (
+      {step === "claim" && authenticated && (
         <div className="mt-10 flex flex-col gap-4">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-3">
@@ -239,6 +238,8 @@ export default function ClaimPage() {
               Sign out
             </button>
           </div>
+
+          {data?.wallet && <WalletPanel wallet={data.wallet} headers={headers} onChange={refresh} />}
 
           {!data ? (
             <div className="skeleton h-72 rounded-[22px]" />
@@ -321,7 +322,7 @@ export default function ClaimPage() {
                             </span>
                             <span className="min-w-0">
                               <span className="block truncate text-[13px] font-medium">
-                                {p.coin?.name ?? p.mint.slice(0, 6)} <span className="text-fg-3">${p.coin?.symbol}</span>
+                                {p.coin ? <>{p.coin.name} <span className="text-fg-3">${p.coin.symbol}</span></> : "All your coins"}
                               </span>
                               <span className="block text-[12px] text-fg-3">
                                 {formatSol(p.lamports)}

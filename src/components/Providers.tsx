@@ -1,34 +1,37 @@
 "use client";
 
-import { createAppKit } from "@reown/appkit/react";
-import { SolanaAdapter } from "@reown/appkit-adapter-solana/react";
-import { solana } from "@reown/appkit/networks";
+import { PrivyProvider } from "@privy-io/react-auth";
+import { defaultSolanaRpcsPlugin, toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 import { MotionConfig } from "framer-motion";
 import type { ReactNode } from "react";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+const solanaConnectors = toSolanaWalletConnectors();
+const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
-createAppKit({
-  adapters: [new SolanaAdapter()],
-  networks: [solana],
-  projectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "",
-  metadata: {
-    name: "Debit",
-    description: "Creator fees, straight to Apple Pay.",
-    url: SITE_URL,
-    icons: [`${SITE_URL}/logo-192.png`],
-  },
-  themeMode: "dark",
-  themeVariables: {
-    "--w3m-accent": "#ffffff",
-    "--w3m-color-mix": "#000000",
-    "--w3m-color-mix-strength": 20,
-    "--w3m-border-radius-master": "2px",
-    "--w3m-font-family": "var(--font-geist-sans), -apple-system, system-ui, sans-serif",
-  },
-  features: { analytics: false, email: false, socials: false },
-});
-
+/**
+ * Privy handles both sides of the app:
+ * - recipients sign in on /claim with their phone number + SMS code only, and get the Solana wallet
+ *   that was created for that number at launch time;
+ * - launchers connect an external Solana wallet (Phantom, Solflare, …) to sign launches.
+ */
 export function Providers({ children }: { children: ReactNode }) {
-  return <MotionConfig reducedMotion="user">{children}</MotionConfig>;
+  if (PRIVY_APP_ID.length !== 25)
+    throw new Error("NEXT_PUBLIC_PRIVY_APP_ID is missing or invalid. Copy it from dashboard.privy.io → Settings → Basics.");
+  return (
+    <PrivyProvider
+      appId={PRIVY_APP_ID}
+      config={{
+        loginMethods: ["sms"],
+        appearance: { theme: "dark", accentColor: "#ffffff", walletChainType: "solana-only" },
+        embeddedWallets: {
+          ethereum: { createOnLogin: "off" },
+          solana: { createOnLogin: "users-without-wallets" },
+        },
+        externalWallets: { solana: { connectors: solanaConnectors } },
+        plugins: [defaultSolanaRpcsPlugin()],
+      }}
+    >
+      <MotionConfig reducedMotion="user">{children}</MotionConfig>
+    </PrivyProvider>
+  );
 }

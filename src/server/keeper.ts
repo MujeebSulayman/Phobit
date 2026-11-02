@@ -1,155 +1,178 @@
 import "server-only";
 import { PUMP_SDK } from "@pump-fun/pump-sdk";
-import {
-  createAssociatedTokenAccountIdempotentInstruction,
-  createTransferCheckedInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token";
-import { PublicKey } from "@solana/web3.js";
+import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { ComputeBudgetProgram, PublicKey, type VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { creatorKeypair, treasuryKeypair } from "./crypto";
-import { sql, transaction, type CoinRow, type PayoutRow } from "./db";
+import { treasuryKeypair } from "./crypto";
+import { db, must, type CoinRow, type PayoutRow, type RecipientRow } from "./db";
 import { env, SOL_MINT, USDC_MINT } from "./env";
 import * as jupiter from "./jupiter";
 import { reconcileLaunches } from "./launch";
 import { usdPrices } from "./prices";
-import { liveState, pump, quoteMint } from "./pump";
+import { signAsWallet } from "./privy";
+import { pump, quoteMint, vaultBalance } from "./pump";
 import { routePayouts, settlePayouts } from "./routing";
 import { buildTransaction, computeBudget, confirm, connection, sendAndConfirm, tokenDelta, TxFailedError } from "./solana";
 
-const LEASE_MINUTES = 9;
+const now = () => new Date().toISOString();
 
-async function acquireLock(): Promise<boolean> {
-  const rows = await sql`
-    update keeper_lock set locked_until = now() + make_interval(mins => ${LEASE_MINUTES})
-    where id = 1 and locked_until < now()
-    returning id`;
-  return rows.length > 0;
+/** Recipient wallets hold no SOL: the treasury is the fee payer, the wallet co-signs through Privy. */
+async function cosign(recipient: Pick<RecipientRow, "wallet_id">, tx: VersionedTransaction) {
+  const signed = await signAsWallet(recipient.wallet_id!, tx);
+  signed.sign([treasuryKeypair()]);
+  return { signed, signature: bs58.encode(signed.signatures[0]) };
 }
 
-async function releaseLock() {
-  await sql`update keeper_lock set locked_until = 'epoch' where id = 1`;
-}
+type SweepingRow = PayoutRow & { recipient: Pick<RecipientRow, "wallet_address"> | null };
 
-async function tokenBalance(ata: PublicKey): Promise<bigint> {
-  try {
-    return BigInt((await connection().getTokenAccountBalance(ata, "confirmed")).value.amount);
-  } catch {
-    return 0n; // account doesn't exist yet
-  }
-}
-
-/** Sweeps that crashed mid-flight: confirm or discard them before sweeping again. */
+/** Collections that crashed mid-flight: finish or discard them before collecting again. */
 async function reconcileSweeps() {
-  const rows = await sql<PayoutRow>`select id, sweep_signature, created_at from payouts where status = 'sweeping'`;
+  const quote = await quoteMint();
+  const rows = must(
+    await db().from("payouts").select("*, recipient:recipients(wallet_address)").eq("status", "sweeping"),
+  ) as SweepingRow[];
   for (const p of rows) {
-    if (!p.sweep_signature) continue;
+    if (!p.sweep_signature || !p.recipient?.wallet_address) continue;
     const { value } = await connection().getSignatureStatuses([p.sweep_signature], { searchTransactionHistory: true });
     const s = value[0];
-    if (s && !s.err && s.confirmationStatus !== "processed")
-      await sql`update payouts set status = 'swept', updated_at = now() where id = ${p.id}`;
-    else if (s?.err || Date.now() - new Date(p.created_at).getTime() > 5 * 60_000)
-      await sql`delete from payouts where id = ${p.id}`;
+    if (s && !s.err && s.confirmationStatus !== "processed") {
+      const collected = await tokenDelta(p.sweep_signature, new PublicKey(p.recipient.wallet_address), quote.mint.toBase58());
+      must(
+        await db().from("payouts").update({ status: "swept", quote_amount: collected.toString(), updated_at: now() }).eq("id", p.id),
+      );
+    } else if (s?.err || Date.now() - new Date(p.created_at).getTime() > 5 * 60_000) {
+      must(await db().from("payouts").delete().eq("id", p.id));
+    }
   }
 }
 
 /**
- * Collects one coin's creator fees and moves them to the treasury in a single transaction:
- * sweep fees v3 trades left on the curve → collect both vaults into the creator's ATA → transfer to treasury.
+ * Collects a recipient's creator fees into their own wallet. pump.fun keys the vault by creator, and
+ * every coin naming this phone number has the same creator (their wallet), so one transaction covers
+ * all of them: sweep what v3 trades left on each curve → collect the curve + AMM vaults.
  */
-async function sweepCoin(coin: CoinRow, minUsd: number, quoteUsd: number) {
-  const mint = new PublicKey(coin.mint);
-  const creator = creatorKeypair(mint);
-  if (creator.publicKey.toBase58() !== coin.creator_key) throw new Error(`Creator key mismatch for ${coin.mint} (MASTER_SEED changed?)`);
-  const treasury = treasuryKeypair();
+async function collectFor(recipient: RecipientRow, coins: CoinRow[], minUsd: number, quoteUsd: number) {
+  const wallet = new PublicKey(recipient.wallet_address!);
+  const treasury = treasuryKeypair().publicKey;
   const quote = await quoteMint();
-  const state = await liveState(mint, creator.publicKey);
-  if (!state.quoteMint.equals(quote.mint)) return; // not ours to price
 
-  const creatorAta = getAssociatedTokenAddressSync(quote.mint, creator.publicKey, true, quote.quoteTokenProgram);
-  const treasuryAta = getAssociatedTokenAddressSync(quote.mint, treasury.publicKey, false, quote.quoteTokenProgram);
-  const total = state.unsweptQuote + (await tokenBalance(creatorAta));
-  const usd = (Number(total) / 10 ** quote.decimals) * quoteUsd;
-  if (total === 0n || usd < minUsd) return;
+  const curves = await Promise.all(coins.map(async (c) => ({ coin: c, curve: await pump().fetchBondingCurve(c.mint) })));
+  const buckets = curves.filter(({ curve }) => curve.quoteMint.equals(quote.mint) && !curve.creatorFee.isZero());
+  const total = (await vaultBalance(wallet)) + buckets.reduce((acc, b) => acc + BigInt(b.curve.creatorFee.toString()), 0n);
+  if (total === 0n || (Number(total) / 10 ** quote.decimals) * quoteUsd < minUsd) return;
 
   const instructions = [
     ...computeBudget(400_000),
-    ...(state.curveCreatorFee > 0n
-      ? [
-          await PUMP_SDK.sweepCreatorFeeInstruction({
-            payer: treasury.publicKey,
-            mint,
-            creator: creator.publicKey,
-            quoteMint: quote.mint,
-            quoteTokenProgram: quote.quoteTokenProgram,
-          }),
-        ]
-      : []),
-    ...(await pump().collectCoinCreatorFeeV2Instructions(creator.publicKey, quote.mint, quote.quoteTokenProgram, treasury.publicKey)),
-    createAssociatedTokenAccountIdempotentInstruction(treasury.publicKey, treasuryAta, treasury.publicKey, quote.mint, quote.quoteTokenProgram),
-    createTransferCheckedInstruction(creatorAta, quote.mint, treasuryAta, creator.publicKey, total, quote.decimals, [], quote.quoteTokenProgram),
+    ...(await Promise.all(
+      buckets.map(({ coin }) =>
+        PUMP_SDK.sweepCreatorFeeInstruction({
+          payer: treasury,
+          mint: new PublicKey(coin.mint),
+          creator: wallet,
+          quoteMint: quote.mint,
+          quoteTokenProgram: quote.quoteTokenProgram,
+        }),
+      ),
+    )),
+    ...(await pump().collectCoinCreatorFeeV2Instructions(wallet, quote.mint, quote.quoteTokenProgram, treasury)),
   ];
-  const { tx, lastValidBlockHeight } = await buildTransaction(treasury.publicKey, instructions, [treasury, creator]);
-  const signature = bs58.encode(tx.signatures[0]);
+  const { tx, lastValidBlockHeight } = await buildTransaction(treasury, instructions);
+  const { signed, signature } = await cosign(recipient, tx);
 
-  // Record intent before broadcasting so a crash can't strand funds unattributed.
-  const [row] = await sql<{ id: string }>`
-    insert into payouts (mint, recipient_key, status, quote_amount, sweep_signature)
-    values (${coin.mint}, ${coin.recipient_key}, 'sweeping', ${total.toString()}, ${signature})
-    returning id`;
+  // Record intent before broadcasting so a crash can't lose track of a collection.
+  const [row] = must(
+    await db()
+      .from("payouts")
+      .insert({
+        mint: coins.length === 1 ? coins[0].mint : null,
+        recipient_key: recipient.key,
+        status: "sweeping",
+        quote_amount: total.toString(),
+        sweep_signature: signature,
+      })
+      .select("id"),
+  ) as { id: string }[];
   try {
-    await sendAndConfirm(tx.serialize(), lastValidBlockHeight);
-    await sql`update payouts set status = 'swept', updated_at = now() where id = ${row.id}`;
+    await sendAndConfirm(signed.serialize(), lastValidBlockHeight);
   } catch (e) {
-    if (e instanceof TxFailedError) await sql`delete from payouts where id = ${row.id}`;
+    if (e instanceof TxFailedError) must(await db().from("payouts").delete().eq("id", row.id));
     throw e;
   }
+  const collected = await tokenDelta(signature, wallet, quote.mint.toBase58());
+  if (collected <= 0n) {
+    must(await db().from("payouts").delete().eq("id", row.id));
+    return;
+  }
+  must(await db().from("payouts").update({ status: "swept", quote_amount: collected.toString(), updated_at: now() }).eq("id", row.id));
 }
 
-/** Swaps each swept payout's quote asset to USDC; the USDC received is the payout's dollar value. */
+type SweptRow = PayoutRow & { recipient: Pick<RecipientRow, "wallet_id" | "wallet_address" | "auto_payouts"> | null };
+
+/** Converts each collected payout to USDC inside the recipient's wallet; the USDC received is its dollar value. */
 async function swapPayouts() {
-  const treasury = treasuryKeypair();
-  const rows = await sql<PayoutRow>`select * from payouts where status = 'swept' order by created_at limit 50`;
+  const treasury = treasuryKeypair().publicKey;
+  const rows = must(
+    await db()
+      .from("payouts")
+      .select("*, recipient:recipients(wallet_id, wallet_address, auto_payouts)")
+      .eq("status", "swept")
+      .order("created_at")
+      .limit(50),
+  ) as SweptRow[];
+
   for (const p of rows) {
+    const r = p.recipient;
+    if (!r?.wallet_id || !r.wallet_address || !r.auto_payouts) continue;
+    const wallet = new PublicKey(r.wallet_address);
     try {
       let signature = p.swap_signature;
       if (signature) {
         await confirm(signature, { timeoutMs: 10_000 }); // a previous run sent it; throws if it failed
       } else {
         const q = await jupiter.quote(env.quoteMint(), USDC_MINT, BigInt(p.quote_amount), 100);
-        const { tx, lastValidBlockHeight } = await jupiter.swapTransaction(q, treasury.publicKey);
-        tx.sign([treasury]);
-        signature = bs58.encode(tx.signatures[0]);
-        await sql`update payouts set swap_signature = ${signature}, updated_at = now() where id = ${p.id}`;
-        await sendAndConfirm(tx.serialize(), lastValidBlockHeight);
+        const { instructions, lookupTables } = await jupiter.swapInstructions(q, wallet);
+        const usdcAta = getAssociatedTokenAddressSync(new PublicKey(USDC_MINT), wallet, true);
+        const { tx, lastValidBlockHeight } = await buildTransaction(
+          treasury,
+          [
+            ComputeBudgetProgram.setComputeUnitPrice({ microLamports: env.priorityFeeMicroLamports() }),
+            createAssociatedTokenAccountIdempotentInstruction(treasury, usdcAta, wallet, new PublicKey(USDC_MINT)),
+            ...instructions,
+          ],
+          [],
+          lookupTables,
+        );
+        const cosigned = await cosign(r, tx);
+        signature = cosigned.signature;
+        must(await db().from("payouts").update({ swap_signature: signature, updated_at: now() }).eq("id", p.id));
+        await sendAndConfirm(cosigned.signed.serialize(), lastValidBlockHeight);
       }
-      const usdcRaw = await tokenDelta(signature, treasury.publicKey, USDC_MINT);
+      const usdcRaw = await tokenDelta(signature, wallet, USDC_MINT);
       const usdc = Number(usdcRaw) / 1e6;
       const sol = (await usdPrices())[SOL_MINT];
-      const lamports = sol ? Math.round((usdc / sol) * 1e9) : 0;
-      const cents = Math.floor(usdc * 100);
-      await transaction((q) => [
-        q`update payouts
-          set status = 'swapped', usdc_amount = ${usdc}, usd_cents = ${cents}, lamports = ${lamports}, updated_at = now()
-          where id = ${p.id}`,
-        q`update coins
-          set fees_swept_lamports = fees_swept_lamports + ${lamports}, fees_swept_usd_cents = fees_swept_usd_cents + ${cents}
-          where mint = ${p.mint}`,
-      ]);
+      must(
+        await db().rpc("record_swap", {
+          p_payout: p.id,
+          p_usdc: usdc,
+          p_cents: Math.floor(usdc * 100),
+          p_lamports: sol ? Math.round((usdc / sol) * 1e9) : 0,
+        }),
+      );
     } catch (e) {
-      // A failed/expired swap leaves the quote asset in the treasury: clear the signature to retry.
+      // A failed or expired swap leaves the fees in the wallet untouched: clear the signature to retry.
       if (e instanceof TxFailedError && !/Timed out/.test(e.message))
-        await sql`update payouts set swap_signature = null, updated_at = now() where id = ${p.id}`;
+        await db().from("payouts").update({ swap_signature: null, updated_at: now() }).eq("id", p.id);
       console.error(`[keeper] swap for payout ${p.id} failed`, e);
     }
   }
 }
 
-export type KeeperReport = { ran: boolean; coins: number; errors: string[] };
+export type KeeperReport = { ran: boolean; recipients: number; errors: string[] };
 
 /** One keeper pass. Every stage is resumable, so a run that dies midway is finished by the next. */
 export async function runKeeper(): Promise<KeeperReport> {
-  if (!(await acquireLock())) return { ran: false, coins: 0, errors: ["Another keeper run holds the lock"] };
+  const locked = must(await db().rpc("acquire_keeper_lock", { p_minutes: 9 })) as boolean;
+  if (!locked) return { ran: false, recipients: 0, errors: ["Another keeper run holds the lock"] };
   const errors: string[] = [];
   const step = async (name: string, fn: () => Promise<unknown>) => {
     try {
@@ -159,24 +182,31 @@ export async function runKeeper(): Promise<KeeperReport> {
       errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
-  let coins: CoinRow[] = [];
+  let recipients = 0;
   try {
     await step("reconcile launches", reconcileLaunches);
-    await step("reconcile sweeps", reconcileSweeps);
-    await step("sweep", async () => {
+    await step("reconcile collections", reconcileSweeps);
+    await step("collect", async () => {
       const prices = await usdPrices();
       const quoteUsd = prices[env.quoteMint()];
       const sol = prices[SOL_MINT];
-      if (!quoteUsd || !sol) throw new Error("Prices unavailable, skipping sweeps");
+      if (!quoteUsd || !sol) throw new Error("Prices unavailable, skipping collection");
       const minUsd = (env.minSweepLamports() / 1e9) * sol;
-      coins = await sql<CoinRow>`select * from coins order by created_at`;
-      for (const coin of coins) await step(`sweep ${coin.mint}`, () => sweepCoin(coin, minUsd, quoteUsd));
+      // Only wallets our signer may act on; the rest keep accruing safely until the owner opts in.
+      const rows = must(await db().from("recipients").select("*").eq("auto_payouts", true).not("wallet_id", "is", null)) as RecipientRow[];
+      const coins = must(await db().from("coins").select("*").in("recipient_key", rows.map((r) => r.key))) as CoinRow[];
+      for (const r of rows) {
+        const mine = coins.filter((c) => c.recipient_key === r.key && c.creator_key === r.wallet_address);
+        if (!mine.length) continue;
+        recipients++;
+        await step(`collect ${r.masked}`, () => collectFor(r, mine, minUsd, quoteUsd));
+      }
     });
     await step("swap", swapPayouts);
     await step("route", () => routePayouts());
     await step("settle", settlePayouts);
   } finally {
-    await releaseLock();
+    await db().rpc("release_keeper_lock");
   }
-  return { ran: true, coins: coins.length, errors };
+  return { ran: true, recipients, errors };
 }
